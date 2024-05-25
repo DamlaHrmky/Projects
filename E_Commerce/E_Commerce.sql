@@ -246,21 +246,26 @@ ADD CONSTRAINT FK_Orders_Items_ORders FOREIGN KEY (order_id) REFERENCES Orders(o
 ---QUESTIONS
 ---1. Find the top 3 customers who have the maximum count of orders.
 
-SELECT  TOP 3 O.customer_id,COUNT(*) AS Order_Count
-FROM Orders O
-LEFT JOIN Customers C On C.customer_id = O.customer_id
-GROUP BY O.customer_id
-ORDER BY COUNT(*) DESC;
+SELECT TOP 3 customer_id,
+			 count(*)AS Order_Count
+FROM		 Order_Items I
+INNER JOIN   Orders O ON I.order_id=O.order_id
+GROUP BY	 customer_id
+ORDER BY 2 DESC;
+
 
 ---2. Find the customer whose order took the maximum time to get shipping. 
 
-SELECT TOP 1 C.customer_id, C.first_name, C.last_name, day_taken_shipping
-FROM Customers AS C
-INNER JOIN Orders  AS O ON O.customer_id=C.customer_id
-INNER JOIN shippings AS S ON O.ship_id = S.ship_id
-ORDER BY day_taken_shipping DESC;
-
-
+SELECT TOP 1 C.customer_id, 
+			 C.first_name, 
+			 C.last_name, 
+			 day_taken_shipping
+FROM		 Customers AS C
+INNER JOIN Orders  AS O 
+			 ON O.customer_id=C.customer_id
+INNER JOIN shippings AS S 
+			 ON O.ship_id = S.ship_id
+ORDER BY	 day_taken_shipping DESC;
 
 
 ---3. Count the total number of unique customers in January and how many of them 
@@ -358,27 +363,7 @@ ORDER BY customer_id
 ---product 14, as well as the ratio of these products to the total number of 
 ---products purchased by the customer. 
 
----customers who purchased both product 11 and product 14 and amounts
-
-SELECT  C.customer_id,
-		SUM(CASE WHEN I.product_id = 11 THEN I.quantity ELSE 0 END) AS Total_Product_11,
-		SUM(CASE WHEN I.product_id = 14 THEN I.quantity ELSE 0 END) AS Total_Product_14
-FROM	Customers AS C
-INNER JOIN Orders AS O ON C.customer_id = O.customer_id
-INNER JOIN Order_Items AS I ON I.order_id = O.order_id
-		WHERE C.customer_id IN (
-					 SELECT O.customer_id							
-					 FROM Orders AS O
-					 INNER JOIN Order_Items AS I ON O.order_id = I.order_id
-					 WHERE I.product_id IN (11, 14)
-					 GROUP BY O.customer_id
-					 HAVING COUNT(DISTINCT I.product_id) = 2
-					)
-		AND I.product_id IN (11, 14)
-GROUP BY C.customer_id
-
-
----creating a temporary table from above
+---customers who purchased both product 11 and product 14 and amounts and creating a temporary table from this
 SELECT 
     C.customer_id, 
     SUM(CASE WHEN I.product_id = 11 THEN I.quantity ELSE 0 END) AS Total_Product_11,
@@ -410,19 +395,6 @@ WHERE
 GROUP BY 
     C.customer_id;
 	
-
----Total Amount of Products Whose Purchase 11 and 14 Products
-SELECT	Cu.customer_id,
-		SUM(It.quantity) AS Total_Amount_Products
-FROM Customers AS Cu
-INNER JOIN #Amount_Products_11_14 X
-		ON  Cu.customer_id=X.customer_id
-INNER JOIN Orders AS O 
-		ON Cu.customer_id = O.customer_id
-INNER JOIN Order_Items AS It 
-		ON It.order_id = O.order_id
-GROUP BY Cu.customer_id
-
 
 ---Calculate the ratio of these products to the total number of products purchased by the customer. 
 
@@ -466,15 +438,6 @@ SELECT
 FROM	Orders;
 
 ----
-
-SELECT	*
-FROM	V_visit_logs A
-ORDER BY
-		A.customer_id,
-		A.Year,
-		A.Month;
-
-
 ---2. Create a “view” that keeps the number of monthly visits by users. (Show 
 ---separately all months from the beginning  business
 
@@ -488,14 +451,7 @@ GROUP BY
 		Month,
 		Year;
 		
----
-
-SELECT	*
-FROM	V_Visit_Counts A
-ORDER BY
-		A.Year,
-		A.Month;
-		
+---	
 ---3. For each visit of customers, create the previous or next month of the visit as a 
 ---separate column. 
 
@@ -510,10 +466,6 @@ FROM
     V_visit_logs B;
 
 ---
-
-SELECT	*
-FROM	V_Next_Month B
-
 ---4. Calculate the monthly time gap between two consecutive visits by each customer. 
 
 CREATE VIEW V_Next_Month_Year AS
@@ -528,6 +480,7 @@ FROM
 
 
 ---
+
 
 CREATE VIEW  CalculatedDifferenceMonths AS(
 SELECT 
@@ -544,23 +497,8 @@ SELECT
             NULL 
     END AS TotalMonthDifference
 FROM	V_Next_Month_Year V
-WHERE V.customer_id IN (SELECT Y.customer_id
-					  FROM V_Previos_Month Y
-					  GROUP BY Y.customer_id
-					  HAVING COUNT(Y.customer_id) >1
-					)
-
 )
 ----
-
-SELECT 
-		customer_id,
-		Month,
-		Year,
-		TotalMonthDifference
-FROM CalculatedDifferenceMonths
-
-
 ---5. Categorise customers using average time gaps. Choose the most fitted labeling model for you. 
 	/*For example:  
 	-> Labeled as churn: if the customer hasn't made another purchase in the 
@@ -583,7 +521,6 @@ FROM CalculatedDifferenceMonths
     FROM CalculatedDifferenceMonths
     GROUP BY customer_id
 )
-
 SELECT 
     customer_id,	
     AvgTimeGap,
@@ -606,7 +543,6 @@ the Customer Segmentation section as a source.*/
 
 --1. Find the number of customers retained month-wise. (You can use time gaps)
 
-
 WITH Cust_Month AS (
     SELECT 
         customer_id,   
@@ -621,16 +557,16 @@ WITH Cust_Month AS (
 
 SELECT  
     month,
-    COUNT(customer_id) AS RetentionCounts
+    COUNT(DISTINCT customer_id) AS RetentionCounts
 FROM    
     Cust_Month
 WHERE
-    TotalMonthDifference = 1
+   TotalMonthDifference = 1
 GROUP BY 
     month
 ORDER BY 
     month;
-	
+
 --2. Calculate the month-wise retention rate.
 
 WITH Cust_Month AS (
@@ -643,18 +579,23 @@ WITH Cust_Month AS (
       
     FROM 
         CalculatedDifferenceMonths      
-)
+), T2 AS(
 
 SELECT  
-    CM.month,
-    COUNT(CASE WHEN CM.TotalMonthDifference = 1 THEN CM.customer_id END) AS RetainedCustomers,
-    LEAD(COUNT(CM.customer_id)) OVER (ORDER BY CM.month) AS TotalCustomersPreviousMonth,
-    CASE
-        WHEN LEAD(COUNT(CM.customer_id)) OVER (ORDER BY CM.month) = 0 THEN 0
-        ELSE CAST(1.0 * COUNT(CASE WHEN CM.TotalMonthDifference = 1 THEN CM.customer_id END) / LEAD(COUNT(CM.customer_id)) OVER (ORDER BY CM.month) AS DECIMAL (3,2))
-    END AS RetentionRate
+    month,
+    COUNT(CASE WHEN TotalMonthDifference = 1 THEN customer_id END) AS RetainedCustomers,
+    COUNT( DISTINCT customer_id)  AS TotalCustomers    
 FROM    
-    Cust_Month CM
+    Cust_Month 
 
 GROUP BY 
-    CM.month;
+    month
+)
+SELECT 
+	month,
+	TotalCustomers,
+	RetainedCustomers,
+	LAG(RetainedCustomers) OVER (ORDER BY month) AS PreviousRetained,
+	CAST(1.0 * LAG(RetainedCustomers) OVER (ORDER BY month) / TotalCustomers AS DECIMAL (3,2))  AS RetentionRate
+
+FROM T2
